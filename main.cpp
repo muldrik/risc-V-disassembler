@@ -146,28 +146,56 @@ void print_symtab_entry(Symtab_entry& e) {
            symbind_to_string(e.st_info).c_str(),
            symvis_to_string(e.st_other).c_str(),
            symindex_to_string(e.st_shndx).c_str(),
-           "");
+           e.name.c_str());
 }
+
+void print_symtab(std::vector<Symtab_entry>& entries) {
+    printf("%s %-15s %7s %-8s %-8s %-8s %6s %s\n", "Symbol", "Value", "Size", "Type", "Bind", "Vis", "Index", "Name");
+    for (auto entry: entries) {
+        print_symtab_entry(entry);
+    }
+}
+
+Elf_section get_str_table(std::ifstream& in) {
+    Elf_section str_table{};
+    while (str_table.sh_type != 3 && !in.eof()) {
+        read_elf_section(str_table, in);
+    }
+    return str_table;
+};
 
 int main() {
     auto in = std::ifstream("../test_elf.o");
     Elf_header header{};
     read_elf_header(header, in);
-    in.seekg(header.e_shoff, std::ios::beg);
 
-    Elf_section str_table{};
-    while (str_table.sh_type != 3 && !in.eof()) {
-        read_elf_section(str_table, in);
+    in.seekg(header.e_shoff, std::ios::beg);
+    Elf_section str_table = get_str_table(in);
+
+    //Read table names
+    Elf_section table_names{};
+    in.seekg(str_table.sh_offset, std::ios::beg);
+    for (int i = 0; i < header.e_shstrndx && !in.eof(); i++) {
+        read_elf_section(table_names, in);
     }
     in.seekg(str_table.sh_offset, std::ios::beg);
-    unsigned int size = str_table.sh_size;
+    unsigned int names_size = str_table.sh_size;
+    char* section_names = new char[names_size];
+    in.read(section_names, names_size);
+    for (int i = 0; i < names_size; i++) std::cout << section_names[i];
+    auto kek = std::string(section_names + str_table.sh_name);
+    std::cout << "\n" << kek << "\n";
 
+
+    in.seekg(str_table.sh_offset, std::ios::beg);
+    unsigned int size = str_table.sh_size;
+    char* strtab = new char[size];
+    in.read(strtab, size);
 
 
 
     in.seekg(header.e_shoff, std::ios::beg);
     Elf_section symtab{};
-    int keks = 0;
     while (symtab.sh_type != 2 && !in.eof()) {
         read_elf_section(symtab, in);
     }
@@ -177,14 +205,20 @@ int main() {
     for (int i = 0; i < entry_count; i++) {
         read_symtab_entry(entries[i], in);
         entries[i].index = i;
+        if (entries[i].st_name != 0)
+            entries[i].name = std::string(strtab + entries[i].st_name);
     }
+    print_symtab(entries);
 
-
-    for (auto entry: entries) {
-        print_symtab_entry(entry);
+    in.seekg(header.e_shoff, std::ios::beg);
+    Elf_section text{};
+    int keks = 0;
+    while (symtab.sh_type != 2 && !in.eof()) {
+        read_elf_section(symtab, in);
     }
 
 
 
     in.close();
+    delete[] strtab;
 }
