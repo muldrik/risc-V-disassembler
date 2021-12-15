@@ -1,146 +1,13 @@
 #include <iostream>
 #include <vector>
+#include <map>
 #include "fstream"
-#include "bitIO.h"
-
-struct Elf_header {
-    uint8_t e_ident[16];
-    uint16_t e_type;
-    uint16_t e_machine;
-    uint32_t e_version;
-    uint32_t e_entry;
-    uint32_t e_phoff;
-    uint32_t e_shoff;
-    uint32_t e_flags;
-    uint16_t e_ehsize;
-    uint16_t e_phentsize;
-    uint16_t e_phnum;
-    uint16_t e_shentsize;
-    uint16_t e_shnum;
-    uint16_t e_shstrndx;
-};
-
-void read_elf_header(Elf_header& h, std::ifstream& in) {
-    in.read((char*) &(h.e_ident), 16);
-    in.read((char*) &h.e_type, sizeof(h.e_type));
-    in.read((char*) &h.e_machine, sizeof(h.e_machine));
-    in.read((char*) &h.e_version, sizeof(h.e_version));
-    in.read((char*) &h.e_entry, sizeof(h.e_entry));
-    in.read((char*) &h.e_phoff, sizeof(h.e_phoff));
-    in.read((char*) &h.e_shoff, sizeof(h.e_shoff));
-    in.read((char*) &h.e_flags, sizeof(h.e_flags));
-    in.read((char*) &h.e_ehsize, sizeof(h.e_ehsize));
-    in.read((char*) &h.e_phentsize, sizeof(h.e_phentsize));
-    in.read((char*) &h.e_phnum, sizeof(h.e_phnum));
-    in.read((char*) &h.e_shentsize, sizeof(h.e_shentsize));
-    in.read((char*) &h.e_shnum, sizeof(h.e_shnum));
-    in.read((char*) &h.e_shstrndx, sizeof(h.e_shstrndx));
+#include "elf_parsing.h"
+#include "instructions.h"
 
 
-}
-
-struct Elf_section {
-    uint32_t sh_name;
-    uint32_t sh_type;
-    uint32_t sh_flags;
-    uint32_t sh_addr;
-    uint32_t sh_offset;
-    uint32_t sh_size;
-    uint32_t sh_link;
-    uint32_t sh_info;
-    uint32_t sh_addralign;
-    uint32_t sh_entsize;
-};
-
-struct Symtab_entry {
-    uint32_t st_name;
-    uint32_t st_value;
-    uint32_t st_size;
-    uint8_t st_info;
-    uint8_t st_other;
-    uint16_t st_shndx;
-    int index = 0;
-    std::string name;
-};
-
-void read_elf_section(Elf_section& s, std::ifstream& in) {
-    in.read((char*) &s, sizeof(s));
-};
-
-void read_symtab_entry(Symtab_entry& e, std::ifstream & in) {
-    in.read((char*) &(e.st_name), sizeof(e.st_name));
-    in.read((char*) &(e.st_value), sizeof(e.st_value));
-    in.read((char*) &(e.st_size), sizeof(e.st_size));
-    in.read((char*) &(e.st_info), sizeof(e.st_info));
-    in.read((char*) &(e.st_other), sizeof(e.st_other));
-    in.read((char*) &(e.st_shndx), sizeof(e.st_shndx));
-}
-
-Elf_section get_symtable(Elf_header& h, std::ifstream& in);
-
-std::string symbind_to_string(uint8_t raw_info) {
-    uint8_t info = (raw_info >> 4);
-    switch (info) {
-        case 0: return "LOCAL";
-        case 1: return "GLOBAL";
-        case 2: return "WEAK";
-        case 10: return "LOOS";
-        case 12: return "HIOS";
-        case 13: return "LOPROC";
-        case 15: return "HIPROC";
-        default: return "UNKNOWN";
-    }
-}
-
-std::string symtype_to_string(uint8_t raw_info) {
-    uint8_t info = (raw_info & 0xf);
-    switch (info) {
-        case 0: return "NOTYPE";
-        case 1: return "OBJECT";
-        case 2: return "FUNC";
-        case 3: return "SECTION";
-        case 4: return "FILE";
-        case 5: return "COMMON";
-        case 6: return "TLS";
-        case 10: return "LOOS";
-        case 12: return "HIOS";
-        case 13: return "LOPROC";
-        case 15: return "HIPROC";
-        default: return "UNKNOWN";
-    }
-}
-
-std::string symvis_to_string(uint8_t other) {
-    switch (other & (0x3)) {
-        case 0: return "DEFAULT";
-        case 1: return "INTERNAL";
-        case 2: return "HIDDEN";
-        case 3: return "PROTECTED";
-        case 4: return "EXPORTED";
-        case 5: return "SINGLETON";
-        case 6: return "ELIMINATE";
-        default: return "UNKNOWN";
-    }
-}
-
-std::string symindex_to_string(uint32_t index) {
-    switch (index) {
-        case 0: return "UNDEF";
-        case (0xff00): return "BEFORE";
-        case (0xff01): return "AFTER";
-        case (0xff1f): return "HIPROC";
-        case (0xff20): return "LOOS";
-        case (0xff3f): return "HIOS";
-        case (0xfff1): return "ABS";
-        case (0xfff2): return "COMMON";
-        case (0xffff): return "XINDEX";
-        default: return std::to_string(index);
-    }
-}
-
-
-void print_symtab_entry(Symtab_entry& e) {
-    printf("[%4i] 0x%-15X %5i %-8s %-8s %-8s %6s %s\n",
+void fprint_symtab_entry(Symtab_entry& e, FILE* out) {
+    fprintf(out, "[%4i] 0x%-15X %5i %-8s %-8s %-8s %6s %s\n",
            e.index, e.st_value, e.st_size,
            symtype_to_string(e.st_info).c_str(),
            symbind_to_string(e.st_info).c_str(),
@@ -149,51 +16,163 @@ void print_symtab_entry(Symtab_entry& e) {
            e.name.c_str());
 }
 
-void print_symtab(std::vector<Symtab_entry>& entries) {
-    printf("%s %-15s %7s %-8s %-8s %-8s %6s %s\n", "Symbol", "Value", "Size", "Type", "Bind", "Vis", "Index", "Name");
-    for (auto entry: entries) {
-        print_symtab_entry(entry);
+
+void fprint_symtab(std::vector<Symtab_entry>& entries, FILE* out) {
+    fprintf(out, ".symtab\n");
+    fprintf(out, "%s %-15s %7s %-8s %-8s %-8s %6s %s\n", "Symbol", "Value", "Size", "Type", "Bind", "Vis", "Index", "Name");
+    for (auto& entry: entries) {
+        fprint_symtab_entry(entry, out);
     }
 }
 
-Elf_section get_str_table(std::ifstream& in) {
-    Elf_section str_table{};
-    while (str_table.sh_type != 3 && !in.eof()) {
-        read_elf_section(str_table, in);
+
+
+void fprint_R(const Instruction& i, uint32_t addr, FILE* out) {
+    fprintf(out, "%08x %10s: %s %s, %s, %s\n",
+            addr,
+            i.label.c_str(),
+            i.name,
+            reg_ABI(i.rd), reg_ABI(i.rs1), reg_ABI(i.rs2));
+}
+
+void fprint_B(const Instruction& i, uint32_t addr, FILE* out) {
+    const uint16_t sign = ((i.funct5 >> 4) ? 1 : 0) << (12);
+    int16_t offset = ((((uint16_t) (((i.funct5 & 0b1111) << 2) + i.funct2)) << 5)
+            + (((uint16_t) i.rd & 1) << 11) + (i.rd & 0b11110)) - sign;
+    fprintf(out, "%08x %10s: %s %s, %s, %d\n",
+            addr,
+            i.label.c_str(),
+            i.name,
+            reg_ABI(i.rs1),
+            reg_ABI(i.rs2),
+            offset);
+}
+
+void fprint_S(const Instruction& i, uint32_t addr, FILE* out) {
+    const uint16_t sign = ((i.funct5 >> 4) ? 1 : 0) << 11;
+    int16_t offset = ((((uint16_t) (((i.funct5 & 0b1111) << 2) + i.funct2)) << 5)
+                              + i.rd) - sign;
+    fprintf(out, "%08x %10s: %s %s, %d(%s)\n",
+            addr,
+            i.label.c_str(),
+            i.name,
+            reg_ABI(i.rs2),
+            offset,
+            reg_ABI(i.rs1));
+}
+
+void fprint_J(const Instruction& i, uint32_t addr, FILE* out) {
+    const uint32_t sign = ((i.funct5 >> 4) ? 1 : 0) << 20;
+    int32_t offset = ((((uint32_t) (i.funct5 & 0b1111)) << 7) +
+            (((uint32_t) (i.funct2)) << 5)  +
+            (((uint32_t) (i.rs2)) << 1) +
+            (((uint32_t) (i.rs1 & 1)) << 11) +
+            (((uint32_t) (i.funct3)) << 12)) - sign;
+    fprintf(out, "%08x %10s: %s %s, %d\n",
+            addr,
+            i.label.c_str(),
+            i.name,
+            reg_ABI(i.rd),
+            offset);
+}
+
+void fprint_U(const Instruction& i, uint32_t addr, FILE* out) {
+    const uint32_t sign = ((i.funct5 >> 4) ? 1 : 0) << 31;
+    int32_t offset = ((((uint32_t) (i.funct5 & 0b1111)) << 27) +
+                       (((uint32_t) (i.funct2)) << 25)  +
+                       (((uint32_t) (i.rs2)) << 20) +
+                       (((uint32_t) (i.rs1)) << 15) +
+                       (((uint32_t) (i.funct3)) << 12)) - sign;
+    fprintf(out, "%08x %10s: %s %s, %s, %d\n",
+            addr,
+            i.label.c_str(),
+            i.name,
+            reg_ABI(i.rd),
+            reg_ABI(i.rs1),
+            offset);
+}
+
+void fprint_I(const Instruction& i, uint32_t addr, FILE* out) {
+    const uint32_t sign = ((i.funct5 >> 4) ? 1 : 0) << 11;
+    int32_t pos = (((((uint16_t) i.funct5 & 0b1111) << 2) + i.funct2) << 5) + i.rs2;
+    int32_t imm = pos - sign;
+    fprintf(out, "%08x %10s: %s %s, %s, %d\n",
+            addr,
+            i.label.c_str(),
+            i.name,
+            reg_ABI(i.rd),
+            reg_ABI(i.rs1),
+            imm);
+}
+
+void fprint_Il(const Instruction& i, uint32_t addr, FILE* out) {
+    const uint16_t sign = ((i.funct5 >> 4) ? 1 : 0) << 11;
+    int16_t offset = (((((uint16_t) i.funct5 & 0b1111) << 2) + i.funct2) << 5) + i.rs2 - sign;
+    fprintf(out, "%08x %10s: %s %s, %d(%s)\n",
+            addr,
+            i.label.c_str(),
+            i.name,
+            reg_ABI(i.rd),
+            offset,
+            reg_ABI(i.rs1));
+}
+
+void fprint_unknown(const Instruction& i, uint32_t addr, FILE* out) {
+    fprintf(out, "%08x %10s: UNKNOWN\n", addr, "");
+}
+
+void fprint_command(const Instruction& i, uint32_t addr, FILE* out) {
+    switch (i.type) {
+        case U: {fprint_U(i, addr, out); break;}
+        case J: {fprint_J(i, addr, out); break;}
+        case I: {fprint_I(i, addr, out); break;}
+        case B: {fprint_B(i, addr, out); break;}
+        case S: {fprint_S(i, addr, out); break;}
+        case R: {fprint_R(i, addr, out); break;}
+        case Il: {fprint_Il(i, addr, out); break;}
+        default:
+            fprint_unknown(i, addr, out);
+            break;
     }
-    return str_table;
+}
+
+struct command {
+    command(uint16_t b1, uint16_t b2) {
+
+    }
+    std::string name;
+    uint8_t opcode;
+    uint8_t funct3;
+    uint8_t rd;
 };
 
-int main() {
-    auto in = std::ifstream("../test_elf.o");
+int main(int argc, char **argv) {
+    if (argc < 3) {
+        std::cout << "2 program arguments expected\n";
+        return 1;
+    }
+    auto in = std::ifstream(argv[1]);
+    if (!in.is_open()) {
+        std::cout << "Unable to open file " << argv[1] << "\n";
+        return 1;
+    }
     Elf_header header{};
     read_elf_header(header, in);
 
+    //Read string table
+    Elf_section str_table{};
     in.seekg(header.e_shoff, std::ios::beg);
-    Elf_section str_table = get_str_table(in);
-
-    //Read table names
-    Elf_section table_names{};
-    in.seekg(str_table.sh_offset, std::ios::beg);
-    for (int i = 0; i < header.e_shstrndx && !in.eof(); i++) {
-        read_elf_section(table_names, in);
+    for (int i = 0; i <= header.e_shstrndx && !in.eof(); i++) {
+        read_elf_section(str_table, in);
     }
     in.seekg(str_table.sh_offset, std::ios::beg);
     unsigned int names_size = str_table.sh_size;
     char* section_names = new char[names_size];
     in.read(section_names, names_size);
-    for (int i = 0; i < names_size; i++) std::cout << section_names[i];
-    auto kek = std::string(section_names + str_table.sh_name);
-    std::cout << "\n" << kek << "\n";
-
-
-    in.seekg(str_table.sh_offset, std::ios::beg);
-    unsigned int size = str_table.sh_size;
-    char* strtab = new char[size];
-    in.read(strtab, size);
 
 
 
+   //Read symtable
     in.seekg(header.e_shoff, std::ios::beg);
     Elf_section symtab{};
     while (symtab.sh_type != 2 && !in.eof()) {
@@ -201,24 +180,56 @@ int main() {
     }
     in.seekg(symtab.sh_offset, std::ios::beg);
     unsigned int entry_count = symtab.sh_size / symtab.sh_entsize;
+
+    //Parse each entry and store names in a map
     std::vector<Symtab_entry> entries(entry_count);
     for (int i = 0; i < entry_count; i++) {
         read_symtab_entry(entries[i], in);
         entries[i].index = i;
         if (entries[i].st_name != 0)
-            entries[i].name = std::string(strtab + entries[i].st_name);
+            entries[i].name = std::string(section_names + entries[i].st_name);
     }
-    print_symtab(entries);
+    std::map<uint32_t, std::string> labels;
+    for (auto entry: entries) {
+        labels[entry.st_value] = entry.name;
+    }
 
+    //Parse .text
     in.seekg(header.e_shoff, std::ios::beg);
     Elf_section text{};
-    int keks = 0;
-    while (symtab.sh_type != 2 && !in.eof()) {
-        read_elf_section(symtab, in);
+
+    for (int i = 0; i < header.e_shnum; i++) {
+        read_elf_section(text, in);
+        if (std::string(section_names + text.sh_name) == ".text") break;
     }
+    in.seekg(text.sh_offset, std::ios::beg);
+    FILE* out = fopen(argv[2], "w");
 
+    fprintf(out, ".text\n");
 
+    uint32_t addr = 0;
+    while (addr < text.sh_size) {
+        uint16_t b1;
+        in.read((char*) &b1, sizeof(b1));
+        if ((b1 & 3) == 3) {
+            uint16_t b2;
+            in.read((char*) &b2, sizeof(b2));
+            Instruction i = parse_instruction(b1, b2);
+            if (labels.find(addr) != labels.end())
+                i.label = labels[addr];
+            fprint_command(i, addr, out);
+            addr+=4;
+        }
+        else {
+            std::cout << "RVC instructions not supported - exiting\n";
+            break;
+        }
+    }
+    fprintf(out, "\n");
+    fprint_symtab(entries, out);
 
     in.close();
-    delete[] strtab;
+    fclose(out);
+    delete[] section_names;
+    return 0;
 }
